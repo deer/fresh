@@ -58,6 +58,17 @@ Deno.test("/with-island prerender", async () => {
   );
 });
 
+Deno.test("plugin routes and middleware", async () => {
+  const resp = await router(new Request("https://fresh.deno.dev/test"));
+  assert(resp);
+  assertEquals(resp.status, Status.OK);
+  const body = await resp.text();
+  assertStringIncludes(
+    body,
+    `<h1>look, i'm set from a plugin!</h1>`,
+  );
+});
+
 Deno.test({
   name: "/with-island hydration",
   async fn(t) {
