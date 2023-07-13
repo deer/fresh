@@ -1,6 +1,7 @@
 import {
   ConnInfo,
   dirname,
+  existsSync,
   extname,
   fromFileUrl,
   join,
@@ -45,7 +46,7 @@ import {
   EsbuildBuilder,
   JSXConfig,
 } from "../build/mod.ts";
-import { InternalRoute } from "./router.ts";
+import { InternalRoute, knownMethods } from "./router.ts";
 
 const DEFAULT_CONN_INFO: ConnInfo = {
   localAddr: { transport: "tcp", hostname: "localhost", port: 8080 },
@@ -138,6 +139,7 @@ export class ServerContext {
   ): Promise<ServerContext> {
     // Get the manifest' base URL.
     const baseUrl = new URL("./", manifest.baseUrl).href;
+    const defaultStaticDir = "./static";
 
     const { config, path: configPath } = await readDenoConfig(
       fromFileUrl(baseUrl),
@@ -174,7 +176,9 @@ export class ServerContext {
     const middlewares: MiddlewareRoute[] = [];
     let app: AppModule = DEFAULT_APP;
     let notFound: UnknownPage = DEFAULT_NOT_FOUND;
+    let unknownModule: UnknownPageModule | null = null;
     let error: ErrorPage = DEFAULT_ERROR;
+    let errorModule: ErrorPageModule | null = null;
     for (const [self, module] of Object.entries(manifest.routes)) {
       const url = new URL(self, baseUrl).href;
       if (!url.startsWith(baseUrl + "routes")) {
@@ -242,6 +246,7 @@ export class ServerContext {
         path === "/_404.tsx" || path === "/_404.ts" ||
         path === "/_404.jsx" || path === "/_404.js"
       ) {
+        unknownModule = module as UnknownPageModule;
         const { default: component, config } = module as UnknownPageModule;
         let { handler } = module as UnknownPageModule;
         if (component && handler === undefined) {
@@ -260,6 +265,7 @@ export class ServerContext {
         path === "/_500.tsx" || path === "/_500.ts" ||
         path === "/_500.jsx" || path === "/_500.js"
       ) {
+        errorModule = module as ErrorPageModule;
         const { default: component, config } = module as ErrorPageModule;
         let { handler } = module as ErrorPageModule;
         if (component && handler === undefined) {
@@ -307,7 +313,7 @@ export class ServerContext {
     const staticFiles: StaticFile[] = [];
     try {
       const staticFolder = new URL(
-        opts.staticDir ?? "./static",
+        opts.staticDir ?? defaultStaticDir,
         manifest.baseUrl,
       );
       const entries = walk(fromFileUrl(staticFolder), {
@@ -349,6 +355,27 @@ export class ServerContext {
 
     const dev = isDevMode();
     if (dev) {
+      const checks: CheckFunction[] = [
+        () => assertModuleExportsDefault(app, "_app"),
+        () => assertSingleModule(routes, "_app"),
+        () => assertModuleExportsDefault(unknownModule, "_404"),
+        () => assertSingleModule(routes, "_404"),
+        () => assertModuleExportsDefault(errorModule, "_500"),
+        () => assertSingleModule(routes, "_500"),
+        () => assertRoutesHaveHandlerOrComponent(routes),
+        () => assertStaticDirSafety(opts.staticDir || "", defaultStaticDir),
+        () => assertNoStaticRouteConflicts(routes, staticFiles),
+      ];
+
+      const results = checks.flatMap((check) => check());
+
+      results.forEach((result) => {
+        console.log(`[${result.category}] ${result.message}`);
+        if (result.fileLink) {
+          console.log(`See: ${result.fileLink}`);
+        }
+      });
+
       // Ensure that debugging hooks are set up for SSR rendering
       await import("preact/debug");
     }
@@ -1089,4 +1116,111 @@ async function readDenoConfig(
     }
     dir = parent;
   }
+}
+
+type CheckFunction = () => CheckResult[];
+
+interface CheckResult {
+  category: string;
+  message: string;
+  fileLink?: string;
+}
+
+function assertModuleExportsDefault(
+  module: AppModule | UnknownPageModule | ErrorPageModule | null,
+  moduleName: string,
+): CheckResult[] {
+  if (module && !module.default) {
+    return [{
+      category: "Module Export",
+      message: `Your ${moduleName} file does not have a default export.`,
+      fileLink: moduleName,
+    }];
+  }
+  return [];
+}
+
+function assertSingleModule(
+  routes: Route[],
+  moduleName: string,
+): CheckResult[] {
+  const moduleRoutes = routes.filter((route) =>
+    route.name.includes(moduleName)
+  );
+
+  if (moduleRoutes.length > 0) {
+    return [{
+      category: "Multiple Modules",
+      message:
+        `Only one ${moduleName} is allowed per application. It must be in the root of the /routes/ folder.`,
+    }];
+  }
+  return [];
+}
+
+function assertRoutesHaveHandlerOrComponent(routes: Route[]): CheckResult[] {
+  return routes.flatMap((route) => {
+    const hasComponent = !!route.component;
+
+    let hasHandlerMethod = false;
+    if (typeof route.handler === "object") {
+      for (const method of knownMethods) {
+        if (method in route.handler) {
+          hasHandlerMethod = true;
+          break;
+        }
+      }
+    }
+
+    if (!hasComponent && !hasHandlerMethod) {
+      return [{
+        category: "Handler or Component",
+        message:
+          `Route at ${route.url} must have a handler or component. It's possible you're missing a default export.`,
+        fileLink: route.name,
+      }];
+    }
+    return [];
+  });
+}
+
+function assertStaticDirSafety(dir: string, defaultDir: string): CheckResult[] {
+  const results: CheckResult[] = [];
+
+  if (dir === defaultDir) {
+    results.push({
+      category: "Static Directory",
+      message:
+        "You cannot use the default static directory as a static override. Please choose a different directory.",
+    });
+  }
+
+  if (existsSync(defaultDir)) {
+    results.push({
+      category: "Static Directory",
+      message:
+        "You cannot have both a static override and a default static directory. Please remove the default static directory.",
+    });
+  }
+
+  return results;
+}
+
+function assertNoStaticRouteConflicts(
+  routes: Route[],
+  staticFiles: StaticFile[],
+): CheckResult[] {
+  const routePatterns = new Set(routes.map((route) => route.pattern));
+
+  return staticFiles.flatMap((staticFile) => {
+    if (routePatterns.has(staticFile.path)) {
+      return [{
+        category: "Static File Conflict",
+        message:
+          `Static file conflict: A file exists at '${staticFile.path}' which matches a route pattern. Please rename the file or change the route pattern.`,
+        fileLink: staticFile.path,
+      }];
+    }
+    return [];
+  });
 }
