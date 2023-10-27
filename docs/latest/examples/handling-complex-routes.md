@@ -3,8 +3,8 @@ description: |
   Sometimes URL based routing isn't enough.
 ---
 
-The page on [routing](/concepts/routing) hints at complex routing based on URL
-patterns using a `RouteConfig` object. Let's dive into this in a bit more
+The page on [routing](/docs/concepts/routing) hints at complex routing based on
+URL patterns using a `RouteConfig` object. Let's dive into this in a bit more
 detail.
 
 A `RouteConfig` has a `routeOverride` string property, which makes use of the
@@ -16,7 +16,7 @@ Here you can define named groups, wildcards, regex groups, and other bits.
 Let's look at the example from the routing page more closely. We'll flesh out
 the handler so that we end up with something like the following:
 
-```ts
+```ts routes/x.tsx
 import { HandlerContext, RouteConfig } from "$fresh/server.ts";
 
 export const handler = {
@@ -47,7 +47,7 @@ show the following:
 
 Let's look at something a bit more complex:
 
-```ts
+```ts routes/api.tsx
 import { HandlerContext, RouteConfig } from "$fresh/server.ts";
 
 export const handler = {

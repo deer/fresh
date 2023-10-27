@@ -1,6 +1,6 @@
 import { assertEquals } from "$std/testing/asserts.ts";
 import { Fragment, h } from "preact";
-import { toBaseRoute } from "./context.ts";
+import { toBaseRoute } from "./compose.ts";
 import {
   assertModuleExportsDefault,
   assertNoStaticRouteConflicts,
@@ -24,6 +24,8 @@ function createRoute(route: Partial<Route>): Route {
     component: () => h(Fragment, null, []),
     handler: () => new Response(),
     csp: false,
+    appWrapper: false,
+    inheritLayouts: false,
     ...route,
   };
 }

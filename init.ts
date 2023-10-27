@@ -91,10 +91,12 @@ const useVSCode = flags.vscode === null
 
 const useDocker = flags.docker;
 
-await Deno.mkdir(join(resolvedDirectory, "routes", "api"), { recursive: true });
-await Deno.mkdir(join(resolvedDirectory, "islands"), { recursive: true });
-await Deno.mkdir(join(resolvedDirectory, "static"), { recursive: true });
-await Deno.mkdir(join(resolvedDirectory, "components"), { recursive: true });
+await Promise.all([
+  Deno.mkdir(join(resolvedDirectory, "routes", "api"), { recursive: true }),
+  Deno.mkdir(join(resolvedDirectory, "islands"), { recursive: true }),
+  Deno.mkdir(join(resolvedDirectory, "static"), { recursive: true }),
+  Deno.mkdir(join(resolvedDirectory, "components"), { recursive: true }),
+]);
 if (useVSCode) {
   await Deno.mkdir(join(resolvedDirectory, ".vscode"), { recursive: true });
 }
@@ -105,6 +107,9 @@ const GITIGNORE = `# dotenv environment variable files
 .env.test.local
 .env.production.local
 .env.local
+
+# Fresh build directory
+_fresh/
 `;
 
 await Deno.writeTextFile(
@@ -137,42 +142,32 @@ CMD ["run", "-A", "main.ts"]
   );
 }
 
-const ROUTES_INDEX_TSX = `import { Head } from "$fresh/runtime.ts";
-import { useSignal } from "@preact/signals";
+const ROUTES_INDEX_TSX = `import { useSignal } from "@preact/signals";
 import Counter from "../islands/Counter.tsx";
 
 export default function Home() {
   const count = useSignal(3);
   return (
-    <>
-      <Head>
-        <title>${basename(resolvedDirectory)}</title>
-      </Head>
-      <div class="px-4 py-8 mx-auto bg-[#86efac]">
-        <div class="max-w-screen-md mx-auto flex flex-col items-center justify-center">
-          <img
-            class="my-6"
-            src="/logo.svg"
-            width="128"
-            height="128"
-            alt="the Fresh logo: a sliced lemon dripping with juice"
-          />
-          <h1 class="text-4xl font-bold">Welcome to Fresh</h1>
-          <p class="my-4">
-            Try updating this message in the
-            <code class="mx-2">./routes/index.tsx</code> file, and refresh.
-          </p>
-          <Counter count={count} />
-        </div>
+    <div class="px-4 py-8 mx-auto bg-[#86efac]">
+      <div class="max-w-screen-md mx-auto flex flex-col items-center justify-center">
+        <img
+          class="my-6"
+          src="/logo.svg"
+          width="128"
+          height="128"
+          alt="the Fresh logo: a sliced lemon dripping with juice"
+        />
+        <h1 class="text-4xl font-bold">Welcome to Fresh</h1>
+        <p class="my-4">
+          Try updating this message in the
+          <code class="mx-2">./routes/index.tsx</code> file, and refresh.
+        </p>
+        <Counter count={count} />
       </div>
-    </>
+    </div>
   );
 }
 `;
-await Deno.writeTextFile(
-  join(resolvedDirectory, "routes", "index.tsx"),
-  ROUTES_INDEX_TSX,
-);
 
 const COMPONENTS_BUTTON_TSX = `import { JSX } from "preact";
 import { IS_BROWSER } from "$fresh/runtime.ts";
@@ -187,10 +182,6 @@ export function Button(props: JSX.HTMLAttributes<HTMLButtonElement>) {
   );
 }
 `;
-await Deno.writeTextFile(
-  join(resolvedDirectory, "components", "Button.tsx"),
-  COMPONENTS_BUTTON_TSX,
-);
 
 const ISLANDS_COUNTER_TSX = `import type { Signal } from "@preact/signals";
 import { Button } from "../components/Button.tsx";
@@ -209,24 +200,6 @@ export default function Counter(props: CounterProps) {
   );
 }
 `;
-await Deno.writeTextFile(
-  join(resolvedDirectory, "islands", "Counter.tsx"),
-  ISLANDS_COUNTER_TSX,
-);
-
-const ROUTES_GREET_TSX = `import { PageProps } from "$fresh/server.ts";
-
-export default function Greet(props: PageProps) {
-  return <div>Hello {props.params.name}</div>;
-}
-`;
-await Deno.mkdir(join(resolvedDirectory, "routes", "greet"), {
-  recursive: true,
-});
-await Deno.writeTextFile(
-  join(resolvedDirectory, "routes", "greet", "[name].tsx"),
-  ROUTES_GREET_TSX,
-);
 
 // 404 page
 const ROUTES_404_PAGE = `import { Head } from "$fresh/runtime.ts";
@@ -257,10 +230,37 @@ export default function Error404() {
   );
 }
 `;
+await Promise.all([
+  Deno.writeTextFile(
+    join(resolvedDirectory, "routes", "index.tsx"),
+    ROUTES_INDEX_TSX,
+  ),
+  Deno.writeTextFile(
+    join(resolvedDirectory, "components", "Button.tsx"),
+    COMPONENTS_BUTTON_TSX,
+  ),
+  Deno.writeTextFile(
+    join(resolvedDirectory, "islands", "Counter.tsx"),
+    ISLANDS_COUNTER_TSX,
+  ),
+  Deno.writeTextFile(
+    join(resolvedDirectory, "routes", "_404.tsx"),
+    ROUTES_404_PAGE,
+  ),
+]);
 
+const ROUTES_GREET_TSX = `import { PageProps } from "$fresh/server.ts";
+
+export default function Greet(props: PageProps) {
+  return <div>Hello {props.params.name}</div>;
+}
+`;
+await Deno.mkdir(join(resolvedDirectory, "routes", "greet"), {
+  recursive: true,
+});
 await Deno.writeTextFile(
-  join(resolvedDirectory, "routes", "_404.tsx"),
-  ROUTES_404_PAGE,
+  join(resolvedDirectory, "routes", "greet", "[name].tsx"),
+  ROUTES_GREET_TSX,
 );
 
 const ROUTES_API_JOKE_TS = `import { HandlerContext } from "$fresh/server.ts";
@@ -426,7 +426,7 @@ html {
 .rounded {
   border-radius: 0.25rem;
 }
-.hover\:bg-gray-200:hover {
+.hover\\:bg-gray-200:hover {
   background-color: #e5e7eb;
 }
 `;
@@ -436,23 +436,34 @@ const APP_WRAPPER = useTwind
 
 export default function App({ Component }: AppProps) {
   return (
-    <>
-      <Component />
-    </>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>${basename(resolvedDirectory)}</title>
+      </head>
+      <body>
+        <Component />
+      </body>
+    </html>
   );
 }
 `
   : `import { AppProps } from "$fresh/server.ts";
-import { Head } from "$fresh/runtime.ts";
 
 export default function App({ Component }: AppProps) {
   return (
-    <>
-      <Head>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>${basename(resolvedDirectory)}</title>
         <link rel="stylesheet" href="/styles.css" />
-      </Head>
-      <Component />
-    </>
+      </head>
+      <body>
+        <Component />
+      </body>
+    </html>
   );
 }
 `;
@@ -493,6 +504,21 @@ try {
   // Skip this and be silent if there is a network issue.
 }
 
+let FRESH_CONFIG_TS = `import { defineConfig } from "$fresh/server.ts";\n`;
+if (useTwind) {
+  FRESH_CONFIG_TS += `import twindPlugin from "$fresh/plugins/twind.ts";
+import twindConfig from "./twind.config.ts";
+`;
+}
+
+FRESH_CONFIG_TS += `
+export default defineConfig({${
+  useTwind ? `\n  plugins: [twindPlugin(twindConfig)],\n` : ""
+}});
+`;
+const CONFIG_TS_PATH = join(resolvedDirectory, "fresh.config.ts");
+await Deno.writeTextFile(CONFIG_TS_PATH, FRESH_CONFIG_TS);
+
 let MAIN_TS = `/// <reference no-default-lib="true" />
 /// <reference lib="dom" />
 /// <reference lib="dom.iterable" />
@@ -503,27 +529,22 @@ import "$std/dotenv/load.ts";
 
 import { start } from "$fresh/server.ts";
 import manifest from "./fresh.gen.ts";
+import config from "./fresh.config.ts";
 `;
-
-if (useTwind) {
-  MAIN_TS += `
-import twindPlugin from "$fresh/plugins/twind.ts";
-import twindConfig from "./twind.config.ts";
-`;
-}
 
 MAIN_TS += `
-await start(manifest${
-  useTwind ? ", { plugins: [twindPlugin(twindConfig)] }" : ""
-});\n`;
+await start(manifest, config);\n`;
 const MAIN_TS_PATH = join(resolvedDirectory, "main.ts");
 await Deno.writeTextFile(MAIN_TS_PATH, MAIN_TS);
 
 const DEV_TS = `#!/usr/bin/env -S deno run -A --watch=static/,routes/
 
 import dev from "$fresh/dev.ts";
+import config from "./fresh.config.ts";
 
-await dev(import.meta.url, "./main.ts");
+import "$std/dotenv/load.ts";
+
+await dev(import.meta.url, "./main.ts", config);
 `;
 const DEV_TS_PATH = join(resolvedDirectory, "dev.ts");
 await Deno.writeTextFile(DEV_TS_PATH, DEV_TS);
@@ -539,6 +560,8 @@ const config = {
     check:
       "deno fmt --check && deno lint && deno check **/*.ts && deno check **/*.tsx",
     start: "deno run -A --watch=static/,routes/ dev.ts",
+    build: "deno run -A dev.ts build",
+    preview: "deno run -A main.ts",
     update: "deno run -A -r https://fresh.deno.dev/update .",
   },
   lint: {
@@ -546,6 +569,7 @@ const config = {
       tags: ["fresh", "recommended"],
     },
   },
+  exclude: ["**/_fresh/*"],
   imports: {} as Record<string, string>,
   compilerOptions: {
     jsx: "react-jsx",
