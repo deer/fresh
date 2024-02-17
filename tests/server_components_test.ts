@@ -1,4 +1,4 @@
-import { assertEquals } from "./deps.ts";
+import { assertEquals, assertStringIncludes, puppeteer } from "./deps.ts";
 import {
   assertSelector,
   assertTextMany,
@@ -186,6 +186,36 @@ Deno.test("define helpers", async () => {
       const doc = await server.getHtml(``);
       assertSelector(doc, "html > body > .app > .layout > .page");
       assertTextMany(doc, "p", ["Layout: it works", "Page: it works"]);
+    },
+  );
+});
+
+Deno.test("component in island", async () => {
+  await withFresh(
+    "./tests/fixture_component_in_island/dev.ts",
+    async (address) => {
+      const res = await fetch(`${address}`);
+      const serverHtml = await res.text();
+      assertStringIncludes(
+        serverHtml,
+        `<div id="component">Hello from a component. IS_BROWSER: false</div>`,
+      );
+
+      let browser;
+      try {
+        browser = await puppeteer.launch({ args: ["--no-sandbox"] });
+        const page = await browser.newPage();
+        await page.goto(`${address}`);
+        const browserHtml = await page.content();
+        assertStringIncludes(
+          browserHtml,
+          `<div id="component">Hello from a component. IS_BROWSER: false</div>`,
+        );
+      } finally {
+        if (browser) {
+          await browser.close();
+        }
+      }
     },
   );
 });
